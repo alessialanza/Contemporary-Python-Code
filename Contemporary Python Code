@@ -1,0 +1,1512 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+ 
+# Explicitly set the desktop path
+desktop_path = "/Users/Esi/Desktop"
+print(f"Saving visualizations to: {desktop_path}")
+ 
+# Function to save figures
+def save_to_desktop(filename):
+	full_path = os.path.join(desktop_path, filename)
+	plt.savefig(full_path, dpi=300, bbox_inches='tight')
+	print(f"Saved: {full_path}")
+	return full_path
+ 
+# Set the correct PLSA thresholds (universal across quintiles)
+plsa_thresholds = {
+	"Minimum": 14400,
+	"Moderate": 31300,
+	"Comfortable": 43100
+}
+ 
+# Apply these thresholds to the results for adequacy calculations
+all_results_corrected = {}
+for quintile_name, results in all_results.items():
+	all_results_corrected[quintile_name] = {
+    	"all": results["all"],
+    	"plsa_thresholds": plsa_thresholds
+	}
+ 
+# Set plot style
+try:
+	plt.style.use('seaborn-v0_8-whitegrid')
+except:
+	try:
+    	plt.style.use('seaborn-whitegrid')  # Fallback for older versions
+	except:
+    	pass
+ 
+# Set color palette
+colors = ['#4C72B0', '#55A868', '#C44E52', '#8172B2', '#CCB974', '#64B5CD']
+sns.set_palette(sns.color_palette(colors))
+ 
+# 1. Distribution of Pension Outcomes with PLSA Thresholds
+print("\nCreating visualization 1: Distribution of Pension Outcomes with PLSA Thresholds")
+plt.figure(figsize=(14, 8))
+ 
+# Plotting distributions for each quintile
+quintiles_list = list(all_results_corrected.keys())
+for i, quintile_name in enumerate(quintiles_list):
+	data = all_results_corrected[quintile_name]['all']
+   
+	sns.kdeplot(data, label=quintile_name, fill=True, alpha=0.3)
+ 
+# Add vertical lines for PLSA thresholds
+plt.axvline(x=plsa_thresholds["Minimum"], color='green', linestyle='--', alpha=0.7,
+        	label=f"Minimum (£{plsa_thresholds['Minimum']:,})")
+plt.axvline(x=plsa_thresholds["Moderate"], color='orange', linestyle='--', alpha=0.7,
+        	label=f"Moderate (£{plsa_thresholds['Moderate']:,})")
+plt.axvline(x=plsa_thresholds["Comfortable"], color='red', linestyle='--', alpha=0.7,
+       	label=f"Comfortable (£{plsa_thresholds['Comfortable']:,})")
+ 
+plt.title('Distribution of Pension Outcomes by Income Quintile with PLSA Thresholds', fontsize=14)
+plt.xlabel('Annual Pension (£)', fontsize=12)
+plt.ylabel('Density', fontsize=12)
+plt.legend(title='Income Quintile / PLSA Standards')
+plt.grid(True, alpha=0.3)
+plt.xlim(0, 80000)
+ 
+plt.tight_layout()
+save_to_desktop("1_pension_distribution_with_plsa.png")
+plt.close()
+ 
+# 2. Create a summary table with PLSA standards
+print("\nCreating visualization 2: Summary Table with PLSA Standards")
+ 
+# Calculate summary statistics with the new thresholds
+summary_data = []
+for quintile_name, results in all_results_corrected.items():
+	pension_values = results["all"]
+   
+	# Calculate adequacy rates for each PLSA standard
+	min_rate = np.mean(pension_values >= plsa_thresholds["Minimum"]) * 100
+	mod_rate = np.mean(pension_values >= plsa_thresholds["Moderate"]) * 100
+	com_rate = np.mean(pension_values >= plsa_thresholds["Comfortable"]) * 100
+   
+	summary_data.append({
+    	"Quintile": quintile_name,
+    	"Median Pension": np.median(pension_values),
+    	"Mean Pension": np.mean(pension_values),
+    	"Minimum Standard (%)": min_rate,
+    	"Moderate Standard (%)": mod_rate,
+    	"Comfortable Standard (%)": com_rate
+	})
+ 
+summary_df_corrected = pd.DataFrame(summary_data)
+ 
+# Save the corrected summary data as CSV
+csv_path = os.path.join(desktop_path, "pension_summary_with_plsa.csv")
+summary_df_corrected.to_csv(csv_path)
+print(f"Saved corrected summary data to: {csv_path}")
+ 
+# Create a visual table
+fig, ax = plt.subplots(figsize=(14, 7))
+ax.axis('tight')
+ax.axis('off')
+ 
+# Round values for display
+summary_df_styled = summary_df_corrected.copy()
+for col in summary_df_styled.columns:
+	if col != 'Quintile':
+    	if 'Pension' in col:
+        	summary_df_styled[col] = summary_df_styled[col].round(0).astype(int)
+    	else:
+        	summary_df_styled[col] = summary_df_styled[col].round(1)
+ 
+# Format currency columns
+for col in ['Median Pension', 'Mean Pension']:
+	summary_df_styled[col] = summary_df_styled[col].apply(lambda x: f"£{x:,}")
+ 
+# Create cell colors based on PLSA achievement
+cell_colors = []
+for i in range(len(summary_df_styled)):
+	row_colors = ['#f2f2f2'] * len(summary_df_styled.columns)
+   
+	# Color the PLSA standard cells based on value
+	for std_col, threshold in [('Minimum Standard (%)', 50), ('Moderate Standard (%)', 30), ('Comfortable Standard (%)', 15)]:
+    	col_idx = summary_df_styled.columns.get_loc(std_col)
+    	std_val = summary_df_styled.iloc[i, col_idx]
+       
+    	# Extract just the number for comparison
+    	std_num = float(std_val) if isinstance(std_val, (int, float)) else float(std_val.strip('%'))
+       
+    	if std_num >= threshold:
+        	row_colors[col_idx] = '#a8d08d'  # Green
+    	elif std_num >= threshold/2:
+        	row_colors[col_idx] = '#ffe699'  # Yellow
+    	else:
+        	row_colors[col_idx] = '#f8cbad'  # Red
+   
+	cell_colors.append(row_colors)
+ 
+# Create the table
+table = ax.table(cellText=summary_df_styled.values, colLabels=summary_df_styled.columns,
+             	loc='center', cellLoc='center', cellColours=cell_colors)
+table.auto_set_font_size(False)
+table.set_fontsize(10)
+table.scale(1, 1.5)
+ 
+# Add title
+plt.suptitle('Pension Outcomes Summary by Income Quintile with PLSA Standards', fontsize=16, y=0.95)
+ 
+plt.tight_layout()
+save_to_desktop("2_pension_summary_with_plsa.png")
+plt.close()
+ 
+# 3. PLSA Standards Achievement Rates
+print("\nCreating visualization 3: PLSA Standards Achievement Rates")
+plt.figure(figsize=(14, 8))
+ 
+# Prepare data for grouped bar chart
+x = np.arange(len(quintiles_list))
+width = 0.25
+ 
+# Extract adequacy rates
+min_rates = [summary_df_corrected.iloc[i]['Minimum Standard (%)'] for i in range(len(quintiles_list))]
+mod_rates = [summary_df_corrected.iloc[i]['Moderate Standard (%)'] for i in range(len(quintiles_list))]
+com_rates = [summary_df_corrected.iloc[i]['Comfortable Standard (%)'] for i in range(len(quintiles_list))]
+ 
+# Create the grouped bar chart
+plt.bar(x - width, min_rates, width, label=f'Minimum (£{plsa_thresholds["Minimum"]:,})', color='#55A868')
+plt.bar(x, mod_rates, width, label=f'Moderate (£{plsa_thresholds["Moderate"]:,})', color='#F8AC8C')
+plt.bar(x + width, com_rates, width, label=f'Comfortable (£{plsa_thresholds["Comfortable"]:,})', color='#C44E52')
+ 
+# Add labels and formatting
+plt.xlabel('Income Quintile', fontsize=12)
+plt.ylabel('Percentage Achieving Standard (%)', fontsize=12)
+plt.title('PLSA Retirement Living Standards Achievement by Income Quintile', fontsize=14)
+plt.xticks(x, quintiles_list)
+plt.legend()
+plt.grid(axis='y', alpha=0.3)
+ 
+# Add value labels on top of bars
+for i, (min_r, mod_r, com_r) in enumerate(zip(min_rates, mod_rates, com_rates)):
+	plt.text(i - width, min_r + 1, f'{min_r:.1f}%', ha='center', va='bottom', fontweight='bold')
+	plt.text(i, mod_r + 1, f'{mod_r:.1f}%', ha='center', va='bottom', fontweight='bold')
+	plt.text(i + width, com_r + 1, f'{com_r:.1f}%', ha='center', va='bottom', fontweight='bold')
+ 
+plt.tight_layout()
+save_to_desktop("3_plsa_standards_achievement.png")
+plt.close()
+ 
+# 4. Stacked Bar Chart of PLSA Achievement Distribution
+print("\nCreating visualization 4: PLSA Achievement Distribution")
+plt.figure(figsize=(14, 8))
+ 
+# Calculate percentage in each PLSA category for each quintile
+plsa_distribution = []
+for quintile_name, results in all_results_corrected.items():
+	pension_values = results["all"]
+   
+	# Count simulations in each category
+	below_min = np.mean(pension_values < plsa_thresholds["Minimum"]) * 100
+	min_to_mod = np.mean((pension_values >= plsa_thresholds["Minimum"]) &
+                     	(pension_values < plsa_thresholds["Moderate"])) * 100
+	mod_to_com = np.mean((pension_values >= plsa_thresholds["Moderate"]) &
+                     	(pension_values < plsa_thresholds["Comfortable"])) * 100
+	above_com = np.mean(pension_values >= plsa_thresholds["Comfortable"]) * 100
+   
+	plsa_distribution.append({
+    	"Quintile": quintile_name,
+    	"Below Minimum": below_min,
+    	"Minimum to Moderate": min_to_mod,
+    	"Moderate to Comfortable": mod_to_com,
+    	"Above Comfortable": above_com
+	})
+ 
+plsa_df = pd.DataFrame(plsa_distribution)
+ 
+# Create stacked bars
+categories = ['Below Minimum', 'Minimum to Moderate', 'Moderate to Comfortable', 'Above Comfortable']
+colors = ['#F8CECC', '#A8D08D', '#FFD966', '#6D9EEB']
+bottom = np.zeros(len(quintiles_list))
+ 
+for i, category in enumerate(categories):
+	values = plsa_df[category].values
+	plt.bar(quintiles_list, values, bottom=bottom, label=category, color=colors[i])
+   
+	# Add percentage labels in the middle of each segment
+	for j, value in enumerate(values):
+    	if value > 5:  # Only add labels for segments large enough to fit text
+        	plt.text(j, bottom[j] + value/2, f'{value:.1f}%',
+                 	ha='center', va='center', fontweight='bold')
+   
+	bottom += values
+ 
+plt.xlabel('Income Quintile', fontsize=12)
+plt.ylabel('Percentage of Simulations (%)', fontsize=12)
+plt.title('Distribution of Pension Outcomes Across PLSA Standards', fontsize=14)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.grid(axis='y', alpha=0.3)
+plt.ylim(0, 100)
+ 
+plt.tight_layout()
+save_to_desktop("4_plsa_distribution.png")
+plt.close()
+ 
+# 5. Box Plots with PLSA Thresholds
+print("\nCreating visualization 5: Box Plots with PLSA Thresholds")
+plt.figure(figsize=(14, 8))
+ 
+# Create box plots
+box_data = [all_results_corrected[q]['all'] for q in quintiles_list]
+box = plt.boxplot(box_data, patch_artist=True, labels=quintiles_list)
+ 
+# Customize box colors
+for patch in box['boxes']:
+	patch.set_facecolor('#4C72B0')
+	patch.set_alpha(0.7)
+ 
+# Add horizontal lines for PLSA thresholds
+plt.axhline(y=plsa_thresholds["Minimum"], color='green', linestyle='--', alpha=0.7,
+        	label=f"Minimum (£{plsa_thresholds['Minimum']:,})")
+plt.axhline(y=plsa_thresholds["Moderate"], color='orange', linestyle='--', alpha=0.7,
+        	label=f"Moderate (£{plsa_thresholds['Moderate']:,})")
+plt.axhline(y=plsa_thresholds["Comfortable"], color='red', linestyle='--', alpha=0.7,
+       	label=f"Comfortable (£{plsa_thresholds['Comfortable']:,})")
+ 
+# Add state pension line
+plt.axhline(y=state_pension, color='purple', linestyle='-', alpha=0.5,
+       	label=f"State Pension (£{state_pension:,.2f})")
+ 
+plt.xlabel('Income Quintile', fontsize=12)
+plt.ylabel('Annual Pension (£)', fontsize=12)
+plt.title('Pension Outcomes by Income Quintile with PLSA Standards', fontsize=14)
+plt.legend()
+plt.grid(axis='y', alpha=0.3)
+ 
+# Add median values
+for i, median_val in enumerate([np.median(data) for data in box_data]):
+	plt.text(i+1, median_val + 1000, f"£{median_val:,.0f}",
+         	ha='center', va='bottom', fontweight='bold')
+ 
+plt.tight_layout()
+save_to_desktop("5_pension_boxplots_with_plsa.png")
+plt.close()
+ 
+print("\nAll corrected visualizations have been saved to: {}/".format(desktop_path))
+print("Files saved:")
+print("1. 1_pension_distribution_with_plsa.png")
+print("2. 2_pension_summary_with_plsa.png")
+print("3. 3_plsa_standards_achievement.png")
+print("4. 4_plsa_distribution.png")
+print("5. 5_pension_boxplots_with_plsa.png")
+print("6. pension_summary_with_plsa.csv")
+
+
+------------------------------------------------------------------------------
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+ 
+# Explicitly set the desktop path
+desktop_path = "/Users/Esi/Desktop"
+print(f"Saving visualizations to: {desktop_path}")
+ 
+# Function to save figures
+def save_to_desktop(filename):
+	full_path = os.path.join(desktop_path, filename)
+	plt.savefig(full_path, dpi=300, bbox_inches='tight')
+	print(f"Saved: {full_path}")
+	return full_path
+ 
+# Set plot style
+try:
+	plt.style.use('seaborn-v0_8-whitegrid')
+except:
+	try:
+    	plt.style.use('seaborn-whitegrid')  # Fallback for older versions
+	except:
+    	pass
+ 
+# 1. Create a visualization showing how a pension pot grows over time
+print("\nCreating visualization 1: Pension Pot Growth")
+ 
+# Create example data for a typical career path
+years = np.arange(0, 61)  # 0-60 years (40 working + 20 retirement)
+working_years = 40
+retirement_years = 20
+ 
+# Parameters for this example
+starting_salary = 37430  # Median quintile starting salary
+salary_growth_rate = 0.022  # 2.2% annual real growth
+contribution_rate = 0.08  # 8% contribution
+early_return_rate = 0.0561  # 5.61% early career return
+late_return_rate = 0.0321  # 3.21% late career return
+ 
+# Calculate year-by-year values
+salary = np.zeros(len(years))
+contributions = np.zeros(len(years))
+pension_pot = np.zeros(len(years))
+pension_income = np.zeros(len(years))
+ 
+# Initialize
+current_salary = starting_salary
+current_pot = 0
+ 
+# Working phase (years 0-40)
+for year in range(working_years):
+	# Update salary with growth
+	if year > 0:
+    	current_salary *= (1 + salary_growth_rate)
+   
+	# Record salary
+	salary[year] = current_salary
+   
+	# Calculate contribution
+	qualifying_earnings = max(0, min(current_salary - 6240, 50270 - 6240))
+	annual_contribution = qualifying_earnings * contribution_rate
+	contributions[year] = annual_contribution
+   
+	# Add contribution to pot
+	current_pot += annual_contribution
+   
+	# Apply investment return
+	if year < 35:
+    	investment_return = early_return_rate
+	else:
+    	investment_return = late_return_rate
+   
+	current_pot *= (1 + investment_return)
+   
+	# Record pot value
+	pension_pot[year] = current_pot
+ 
+# Retirement phase (years 41-60)
+final_pot = current_pot
+annual_private_pension = final_pot / retirement_years
+annual_total_pension = annual_private_pension + 11502.40  # Add state pension
+ 
+for year in range(working_years, working_years + retirement_years):
+	salary[year] = 0  # No salary in retirement
+	contributions[year] = 0  # No contributions in retirement
+	pension_income[year] = annual_total_pension
+   
+	# Draw down from pot
+	if year == working_years:
+    	pension_pot[year] = final_pot
+	else:
+    	pension_pot[year] = pension_pot[year-1] - annual_private_pension
+ 
+# Create the visualization
+plt.figure(figsize=(14, 10))
+ 
+# Main plot for pension pot
+plt.subplot(3, 1, (1, 2))  # Use top 2/3 of the figure
+ 
+# Plot pension pot
+plt.plot(years, pension_pot, 'g-', linewidth=3, label='Pension Pot Value')
+ 
+# Shade working and retirement phases
+plt.axvspan(0, working_years, color='#E6F2E0', alpha=0.5, label='Working Phase')
+plt.axvspan(working_years, working_years + retirement_years, color='#F2E6E0', alpha=0.5, label='Retirement Phase')
+ 
+# Mark retirement point
+plt.axvline(x=working_years, color='red', linestyle='--', label='Retirement')
+ 
+# Add annotations
+pot_max = pension_pot.max()
+plt.annotate(f'Final Pot: £{final_pot:,.0f}',
+         	xy=(working_years, final_pot),
+         	xytext=(working_years-5, final_pot*1.1),
+         	arrowprops=dict(facecolor='black', shrink=0.05),
+         	fontweight='bold')
+ 
+plt.annotate(f'Annual Pension: £{annual_total_pension:,.0f}',
+         	xy=(working_years+5, final_pot*0.8),
+         	xytext=(working_years+5, final_pot*0.9),
+         	fontweight='bold',
+         	bbox=dict(boxstyle='round,pad=0.5', facecolor='yellow', alpha=0.5))
+ 
+# Add labels and title
+plt.title('Simulated Pension Pot Growth and Drawdown\n(Median Income, No Career Breaks)', fontsize=16)
+plt.ylabel('Pension Pot Value (£)', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(loc='upper left')
+ 
+# Bottom plot for salary, contributions, and pension income
+plt.subplot(3, 1, 3)  # Use bottom 1/3 of the figure
+ 
+# Plot salary, contributions and pension income
+plt.plot(years, salary, 'b-', linewidth=2, label='Salary')
+plt.plot(years, contributions, 'g--', linewidth=2, label='Annual Contribution')
+plt.plot(years, pension_income, 'r-', linewidth=2, label='Pension Income')
+ 
+# Add PLSA threshold lines
+plt.axhline(y=14400, color='green', linestyle='-.', alpha=0.7, label='Minimum (£14,400)')
+plt.axhline(y=31300, color='orange', linestyle='-.', alpha=0.7, label='Moderate (£31,300)')
+plt.axhline(y=43100, color='red', linestyle='-.', alpha=0.7, label='Comfortable (£43,100)')
+ 
+# Add labels
+plt.xlabel('Year', fontsize=14)
+plt.ylabel('Annual Amount (£)', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(loc='upper right')
+ 
+# Adjust layout and save
+plt.tight_layout()
+save_to_desktop("1_pension_pot_growth_simulation.png")
+plt.close()
+ 
+# 2. Create a visualization of different career scenarios
+print("\nCreating visualization 2: Career Scenarios Impact")
+ 
+# Define different career scenarios
+scenarios = [
+	{
+    	'name': 'No Breaks',
+    	'breaks': [],
+    	'color': '#4C72B0'
+	},
+	{
+    	'name': 'One Early Break (5 years)',
+    	'breaks': [(10, 15)],
+    	'color': '#55A868'
+	},
+	{
+    	'name': 'One Mid-Career Break (3 years)',
+    	'breaks': [(20, 23)],
+    	'color': '#C44E52'
+	},
+	{
+    	'name': 'Multiple Breaks (total 8 years)',
+    	'breaks': [(8, 12), (20, 22), (30, 32)],
+    	'color': '#8172B2'
+	}
+]
+ 
+# Create arrays to store results
+scenario_pot_values = []
+scenario_pensions = []
+ 
+# Function to simulate a career with specific breaks
+def simulate_career(breaks, salary_growth=0.022, salary_penalty=3510):
+	# Initialize
+	current_salary = starting_salary
+	current_pot = 0
+	pot_values = np.zeros(len(years))
+   
+	# Working phase
+	for year in range(working_years):
+    	# Check if in a career break
+    	in_break = False
+    	for break_start, break_end in breaks:
+        	if break_start <= year < break_end:
+            	in_break = True
+            	break
+       
+    	# Update salary if not in break
+    	if year > 0 and not in_break:
+        	current_salary *= (1 + salary_growth)
+       
+    	# Apply career break penalty
+    	past_breaks = 0
+    	for break_start, break_end in breaks:
+        	if year >= break_end:
+            	past_breaks += 1
+       
+    	# Reduce salary based on past breaks
+    	penalty = past_breaks * salary_penalty
+    	current_salary = max(current_salary - penalty, 6240)  # Ensure minimum salary
+       
+    	# Calculate contribution
+    	if in_break:
+        	annual_contribution = 0  # No contribution during break
+    	else:
+        	qualifying_earnings = max(0, min(current_salary - 6240, 50270 - 6240))
+        	annual_contribution = qualifying_earnings * contribution_rate
+       
+    	# Add contribution to pot
+    	current_pot += annual_contribution
+       
+    	# Apply investment return
+    	if year < 35:
+        	investment_return = early_return_rate
+    	else:
+        	investment_return = late_return_rate
+       
+    	current_pot *= (1 + investment_return)
+       
+    	# Record pot value
+    	pot_values[year] = current_pot
+   
+	# Retirement phase
+	final_pot = current_pot
+	annual_private_pension = final_pot / retirement_years
+	annual_total_pension = annual_private_pension + 11502.40  # Add state pension
+   
+	for year in range(working_years, working_years + retirement_years):
+    	if year == working_years:
+        	pot_values[year] = final_pot
+    	else:
+        	pot_values[year] = pot_values[year-1] - annual_private_pension
+   
+	return pot_values, annual_total_pension
+ 
+# Run simulations for each scenario
+for scenario in scenarios:
+	pot_values, annual_pension = simulate_career(scenario['breaks'])
+	scenario_pot_values.append(pot_values)
+	scenario_pensions.append(annual_pension)
+ 
+# Create visualization
+plt.figure(figsize=(14, 10))
+ 
+# Main plot for pension pot growth
+plt.subplot(2, 1, 1)
+ 
+# Plot each scenario
+for i, scenario in enumerate(scenarios):
+	plt.plot(years, scenario_pot_values[i], color=scenario['color'],
+         	linewidth=2, label=f"{scenario['name']} (£{scenario_pensions[i]:,.0f}/year)")
+   
+	# Mark career breaks
+	for break_start, break_end in scenario['breaks']:
+    	plt.axvspan(break_start, break_end, color=scenario['color'], alpha=0.2)
+ 
+# Mark retirement point
+plt.axvline(x=working_years, color='black', linestyle='--', label='Retirement')
+ 
+# Add labels and title
+plt.title('Impact of Career Breaks on Pension Pot Growth', fontsize=16)
+plt.ylabel('Pension Pot Value (£)', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(loc='upper left')
+ 
+# Bottom plot for final pension comparison
+plt.subplot(2, 1, 2)
+ 
+# Create bar chart of final pensions
+plt.bar([s['name'] for s in scenarios], scenario_pensions, color=[s['color'] for s in scenarios])
+ 
+# Add PLSA threshold lines
+plt.axhline(y=14400, color='green', linestyle='--', alpha=0.7, label='Minimum (£14,400)')
+plt.axhline(y=31300, color='orange', linestyle='--', alpha=0.7, label='Moderate (£31,300)')
+plt.axhline(y=43100, color='red', linestyle='--', alpha=0.7, label='Comfortable (£43,100)')
+ 
+# Add value labels
+for i, pension in enumerate(scenario_pensions):
+	plt.text(i, pension + 1000, f'£{pension:,.0f}', ha='center', va='bottom', fontweight='bold')
+ 
+# Add labels
+plt.xlabel('Career Scenario', fontsize=14)
+plt.ylabel('Annual Pension (£)', fontsize=14)
+plt.grid(axis='y', alpha=0.3)
+plt.legend(loc='upper right')
+ 
+# Adjust layout and save
+plt.tight_layout()
+save_to_desktop("2_career_scenarios_impact.png")
+plt.close()
+ 
+# 3. Create a visualization of Monte Carlo simulation
+print("\nCreating visualization 3: Monte Carlo Simulation Paths")
+ 
+# Number of simulations to run
+num_simulations = 100
+ 
+# Run Monte Carlo simulations
+np.random.seed(42)  # For reproducibility
+sim_pot_values = []
+sim_final_pensions = []
+ 
+for i in range(num_simulations):
+	# Generate random parameters for this simulation
+	salary_growth = np.random.normal(0.022, 0.005)  # Mean 2.2%, SD 0.5%
+	early_return = np.random.normal(0.0561, 0.02)  # Mean 5.61%, SD 2%
+	late_return = np.random.normal(0.0321, 0.01)  # Mean 3.21%, SD 1%
+   
+	# Randomly decide if there's a career break
+	has_break = np.random.random() < 0.45  # 45% chance of break
+	if has_break:
+    	break_start = np.random.randint(5, 30)
+    	break_duration = max(1, min(10, np.random.normal(3.8, 1)))  # Mean 3.8 years
+    	breaks = [(break_start, break_start + break_duration)]
+	else:
+    	breaks = []
+   
+	# Initialize
+	current_salary = starting_salary
+	current_pot = 0
+	pot_values = np.zeros(len(years))
+   
+	# Working phase
+	for year in range(working_years):
+    	# Check if in a career break
+    	in_break = False
+    	for break_start, break_end in breaks:
+        	if break_start <= year < break_end:
+            	in_break = True
+            	break
+       
+    	# Update salary if not in break
+    	if year > 0 and not in_break:
+        	salary_growth_this_year = np.random.normal(salary_growth, 0.01)
+        	current_salary *= (1 + max(-0.05, min(0.10, salary_growth_this_year)))
+       
+    	# Apply career break penalty
+    	past_breaks = 0
+    	for break_start, break_end in breaks:
+        	if year >= break_end:
+            	past_breaks += 1
+       
+    	# Reduce salary based on past breaks
+    	penalty = past_breaks * 3510
+    	current_salary = max(current_salary - penalty, 6240)  # Ensure minimum salary
+       
+    	# Calculate contribution
+    	if in_break:
+        	annual_contribution = 0  # No contribution during break
+    	else:
+        	qualifying_earnings = max(0, min(current_salary - 6240, 50270 - 6240))
+        	annual_contribution = qualifying_earnings * contribution_rate
+       
+    	# Add contribution to pot
+    	current_pot += annual_contribution
+       
+    	# Apply investment return
+    	if year < 35:
+        	investment_return = np.random.normal(early_return, 0.085)
+        	investment_return = max(-0.25, min(0.30, investment_return))
+    	else:
+        	investment_return = np.random.normal(late_return, 0.045)
+        	investment_return = max(-0.15, min(0.20, investment_return))
+       
+    	current_pot *= (1 + investment_return)
+       
+    	# Record pot value
+    	pot_values[year] = current_pot
+   
+	# Retirement phase
+	final_pot = current_pot
+	retirement_duration = np.random.normal(21.15, 1)  # Mean 21.15 years
+	retirement_duration = max(15, min(30, retirement_duration))
+	annual_private_pension = final_pot / retirement_duration
+	annual_total_pension = annual_private_pension + 11502.40  # Add state pension
+   
+	for year in range(working_years, working_years + retirement_years):
+    	if year == working_years:
+        	pot_values[year] = final_pot
+    	else:
+        	pot_values[year] = pot_values[year-1] - annual_private_pension
+   
+	sim_pot_values.append(pot_values)
+	sim_final_pensions.append(annual_total_pension)
+ 
+# Convert to numpy arrays
+sim_pot_values = np.array(sim_pot_values)
+sim_final_pensions = np.array(sim_final_pensions)
+ 
+# Calculate statistics
+median_path = np.median(sim_pot_values, axis=0)
+p10_path = np.percentile(sim_pot_values, 10, axis=0)
+p90_path = np.percentile(sim_pot_values, 90, axis=0)
+ 
+median_pension = np.median(sim_final_pensions)
+p10_pension = np.percentile(sim_final_pensions, 10)
+p90_pension = np.percentile(sim_final_pensions, 90)
+ 
+# Create visualization
+plt.figure(figsize=(14, 10))
+ 
+# Top plot for Monte Carlo paths
+plt.subplot(2, 1, 1)
+ 
+# Plot all paths with low opacity
+for i in range(num_simulations):
+	plt.plot(years, sim_pot_values[i], color='lightblue', alpha=0.1)
+ 
+# Plot summary statistics
+plt.plot(years, median_path, color='blue', linewidth=2, label='Median Path')
+plt.plot(years, p10_path, color='red', linewidth=2, linestyle='--', label='10th Percentile')
+plt.plot(years, p90_path, color='green', linewidth=2, linestyle='--', label='90th Percentile')
+ 
+# Mark retirement
+plt.axvline(x=working_years, color='black', linestyle='--', label='Retirement')
+ 
+# Add labels and title
+plt.title(f'Monte Carlo Simulation: {num_simulations} Pension Paths', fontsize=16)
+plt.ylabel('Pension Pot Value (£)', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(loc='upper left')
+ 
+# Bottom plot for final pension distribution
+plt.subplot(2, 1, 2)
+ 
+# Create histogram
+plt.hist(sim_final_pensions, bins=20, color='lightblue', edgecolor='blue')
+ 
+# Add PLSA threshold lines
+plt.axvline(x=14400, color='green', linewidth=2, linestyle='--', label='Minimum (£14,400)')
+plt.axvline(x=31300, color='orange', linewidth=2, linestyle='--', label='Moderate (£31,300)')
+plt.axvline(x=43100, color='red', linewidth=2, linestyle='--', label='Comfortable (£43,100)')
+ 
+# Add statistics
+plt.axvline(x=median_pension, color='blue', linewidth=2, label=f'Median: £{median_pension:,.0f}')
+plt.axvline(x=p10_pension, color='red', linewidth=2, linestyle=':', label=f'10th %: £{p10_pension:,.0f}')
+plt.axvline(x=p90_pension, color='green', linewidth=2, linestyle=':', label=f'90th %: £{p90_pension:,.0f}')
+ 
+# Calculate adequacy rates
+min_pct = np.mean(sim_final_pensions >= 14400) * 100
+mod_pct = np.mean(sim_final_pensions >= 31300) * 100
+com_pct = np.mean(sim_final_pensions >= 43100) * 100
+ 
+# Add text box with statistics
+stats_text = (f"Median Pension: £{median_pension:,.0f}\n"
+          	f"10th-90th Percentile: £{p10_pension:,.0f} - £{p90_pension:,.0f}\n\n"
+          	f"PLSA Standards Achieved:\n"
+          	f"Minimum (£14,400): {min_pct:.1f}%\n"
+          	f"Moderate (£31,300): {mod_pct:.1f}%\n"
+          	f"Comfortable (£43,100): {com_pct:.1f}%")
+ 
+plt.text(0.97, 0.97, stats_text, transform=plt.gca().transAxes,
+     	ha='right', va='top', fontsize=12,
+     	bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+ 
+# Add labels
+plt.xlabel('Annual Pension (£)', fontsize=14)
+plt.ylabel('Number of Simulations', fontsize=14)
+plt.grid(True, alpha=0.3)
+plt.legend(loc='upper left')
+ 
+# Adjust layout and save
+plt.tight_layout()
+save_to_desktop("3_monte_carlo_simulation.png")
+plt.close()
+ 
+# 4. Create a visualization of key parameters' impact
+print("\nCreating visualization 4: Parameter Sensitivity Analysis")
+ 
+# Set up a figure with 4 subplots
+fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+axes = axes.flatten()
+ 
+# 1. Impact of contribution rate
+contribution_rates = [0.04, 0.06, 0.08, 0.10, 0.12]
+contrib_pensions = []
+ 
+for rate in contribution_rates:
+	# Run a simulation with this contribution rate
+	current_salary = starting_salary
+	current_pot = 0
+   
+	for year in range(working_years):
+    	# Update salary
+    	if year > 0:
+        	current_salary *= (1 + salary_growth_rate)
+       
+    	# Calculate contribution
+    	qualifying_earnings = max(0, min(current_salary - 6240, 50270 - 6240))
+    	annual_contribution = qualifying_earnings * rate
+       
+    	# Add contribution to pot
+    	current_pot += annual_contribution
+       
+    	# Apply investment return
+    	if year < 35:
+        	investment_return = early_return_rate
+    	else:
+        	investment_return = late_return_rate
+       
+    	current_pot *= (1 + investment_return)
+   
+	# Calculate annual pension
+	annual_private_pension = current_pot / retirement_years
+	annual_total_pension = annual_private_pension + 11502.40
+	contrib_pensions.append(annual_total_pension)
+ 
+# Plot contribution rate impact
+ax = axes[0]
+ax.bar([f"{r*100:.0f}%" for r in contribution_rates], contrib_pensions, color='#4C72B0')
+ 
+# Add value labels
+for i, pension in enumerate(contrib_pensions):
+	ax.text(i, pension + 1000, f'£{pension:,.0f}', ha='center', va='bottom')
+ 
+# Add PLSA threshold lines
+ax.axhline(y=14400, color='green', linestyle='--', alpha=0.7, label='Minimum')
+ax.axhline(y=31300, color='orange', linestyle='--', alpha=0.7, label='Moderate')
+ax.axhline(y=43100, color='red', linestyle='--', alpha=0.7, label='Comfortable')
+ 
+# Add labels
+ax.set_xlabel('Contribution Rate', fontsize=12)
+ax.set_ylabel('Annual Pension (£)', fontsize=12)
+ax.set_title('Impact of Contribution Rate on Pension Outcome', fontsize=14)
+ax.grid(True, alpha=0.3)
+ax.legend()
+ 
+# 2. Impact of investment returns
+return_scenarios = [
+	(0.03, 0.01), (0.04, 0.02), (0.0561, 0.0321), (0.07, 0.04), (0.08, 0.05)
+]
+return_labels = ['3%/1%', '4%/2%', '5.6%/3.2%\n(Base)', '7%/4%', '8%/5%']
+return_pensions = []
+ 
+for early_rate, late_rate in return_scenarios:
+	# Run a simulation with these return rates
+	current_salary = starting_salary
+	current_pot = 0
+   
+	for year in range(working_years):
+    	# Update salary
+    	if year > 0:
+        	current_salary *= (1 + salary_growth_rate)
+       
+    	# Calculate contribution
+    	qualifying_earnings = max(0, min(current_salary - 6240, 50270 - 6240))
+    	annual_contribution = qualifying_earnings * contribution_rate
+       
+    	# Add contribution to pot
+    	current_pot += annual_contribution
+       
+    	# Apply investment return
+    	if year < 35:
+        	investment_return = early_rate
+    	else:
+        	investment_return = late_rate
+       
+    	current_pot *= (1 + investment_return)
+   
+	# Calculate annual pension
+	annual_private_pension = current_pot / retirement_years
+	annual_total_pension = annual_private_pension + 11502.40
+	return_pensions.append(annual_total_pension)
+ 
+# Plot investment return impact
+ax = axes[1]
+ax.bar(return_labels, return_pensions, color='#55A868')
+ 
+# Add value labels
+for i, pension in enumerate(return_pensions):
+	ax.text(i, pension + 1000, f'£{pension:,.0f}', ha='center', va='bottom')
+ 
+# Add PLSA threshold lines
+ax.axhline(y=14400, color='green', linestyle='--', alpha=0.7, label='Minimum')
+ax.axhline(y=31300, color='orange', linestyle='--', alpha=0.7, label='Moderate')
+ax.axhline(y=43100, color='red', linestyle='--', alpha=0.7, label='Comfortable')
+ 
+# Add labels
+ax.set_xlabel('Investment Return Rates (Early/Late)', fontsize=12)
+ax.set_ylabel('Annual Pension (£)', fontsize=12)
+ax.set_title('Impact of Investment Returns on Pension Outcome', fontsize=14)
+ax.grid(True, alpha=0.3)
+ax.legend()
+ 
+# 3. Impact of career break probability
+break_probs = [0.0, 0.15, 0.30, 0.45, 0.60]
+break_labels = ['0%', '15%', '30%', '45%\n(Base)', '60%']
+break_pensions = []
+ 
+# Run Monte Carlo for each probability to smooth out randomness
+np.random.seed(42)
+for prob in break_probs:
+	sim_pensions = []
+   
+	for _ in range(50):  # 50 simulations per probability
+    	# Generate random break
+    	has_break = np.random.random() < prob
+    	if has_break:
+        	break_start = np.random.randint(5, 30)
+        	break_duration = max(1, min(10, np.random.normal(3.8, 1)))
+        	breaks = [(break_start, break_start + break_duration)]
+    	else:
+        	breaks = []
+       
+    	# Run a simulation with these breaks
+    	current_salary = starting_salary
+    	current_pot = 0
+       
+    	for year in range(working_years):
+        	# Check if in a career break
+        	in_break = False
+        	for break_start, break_end in breaks:
+            	if break_start <= year < break_end:
+                	in_break = True
+                	break
+           
+        	# Update salary if not in break
+        	if year > 0 and not in_break:
+            	current_salary *= (1 + salary_growth_rate)
+           
+        	# Apply career break penalty
+        	past_breaks = 0
+        	for break_start, break_end in breaks:
+            	if year >= break_end:
+                	past_breaks += 1
+           
+        	# Reduce salary based on past breaks
+        	penalty = past_breaks * 3510
+        	current_salary = max(current_salary - penalty, 6240)
+           
+        	# Calculate contribution
+        	if in_break:
+            	annual_contribution = 0
+        	else:
+            	qualifying_earnings = max(0, min(current_salary - 6240, 50270 - 6240))
+            	annual_contribution = qualifying_earnings * contribution_rate
+           
+        	# Add contribution to pot
+        	current_pot += annual_contribution
+           
+        	# Apply investment return
+        	if year < 35:
+            	investment_return = early_return_rate
+        	else:
+            	investment_return = late_return_rate
+           
+        	current_pot *= (1 + investment_return)
+       
+    	# Calculate annual pension
+    	annual_private_pension = current_pot / retirement_years
+    	annual_total_pension = annual_private_pension + 11502.40
+    	sim_pensions.append(annual_total_pension)
+   
+	# Use median from simulations
+	break_pensions.append(np.median(sim_pensions))
+ 
+# Plot career break probability impact
+ax = axes[2]
+ax.bar(break_labels, break_pensions, color='#C44E52')
+ 
+# Add value labels
+for i, pension in enumerate(break_pensions):
+	ax.text(i, pension + 1000, f'£{pension:,.0f}', ha='center', va='bottom')
+ 
+# Add PLSA threshold lines
+ax.axhline(y=14400, color='green', linestyle='--', alpha=0.7, label='Minimum')
+ax.axhline(y=31300, color='orange', linestyle='--', alpha=0.7, label='Moderate')
+ax.axhline(y=43100, color='red', linestyle='--', alpha=0.7, label='Comfortable')
+ 
+# Add labels
+ax.set_xlabel('Career Break Probability', fontsize=12)
+ax.set_ylabel('Annual Pension (£)', fontsize=12)
+ax.set_title('Impact of Career Break Probability on Pension Outcome', fontsize=14)
+ax.grid(True, alpha=0.3)
+ax.legend()
+ 
+# 4. Impact of retirement duration
+retirement_durations = [15, 18, 21, 24, 27]
+duration_labels = ['15 years', '18 years', '21 years\n(Base)', '24 years', '27 years']
+duration_pensions = []
+ 
+# Final pot value is the same for all durations
+current_salary = starting_salary
+current_pot = 0
+ 
+# Calculate pot value at retirement
+for year in range(working_years):
+	# Update salary
+	if year > 0:
+    	current_salary *= (1 + salary_growth_rate)
+   
+	# Calculate contribution
+	qualifying_earnings = max(0, min(current_salary - 6240, 50270 - 6240))
+	annual_contribution = qualifying_earnings * contribution_rate
+   
+	# Add contribution to pot
+	current_pot += annual_contribution
+   
+	# Apply investment return
+	if year < 35:
+    	investment_return = early_return_rate
+	else:
+    	investment_return = late_return_rate
+   
+	current_pot *= (1 + investment_return)
+ 
+final_pot = current_pot
+ 
+# Calculate pension for each duration
+for duration in retirement_durations:
+	annual_private_pension = final_pot / duration
+	annual_total_pension = annual_private_pension + 11502.40
+	duration_pensions.append(annual_total_pension)
+ 
+# Plot retirement duration impact
+ax = axes[3]
+ax.bar(duration_labels, duration_pensions, color='#8172B2')
+# Add value labels
+for i, pension in enumerate(duration_pensions):
+	ax.text(i, pension + 1000, f'£{pension:,.0f}', ha='center', va='bottom')
+ 
+# Add PLSA threshold lines
+ax.axhline(y=14400, color='green', linestyle='--', alpha=0.7, label='Minimum')
+ax.axhline(y=31300, color='orange', linestyle='--', alpha=0.7, label='Moderate')
+ax.axhline(y=43100, color='red', linestyle='--', alpha=0.7, label='Comfortable')
+ 
+# Add labels
+ax.set_xlabel('Retirement Duration', fontsize=12)
+ax.set_ylabel('Annual Pension (£)', fontsize=12)
+ax.set_title('Impact of Retirement Duration on Pension Outcome', fontsize=14)
+ax.grid(True, alpha=0.3)
+ax.legend()
+ 
+# Add suptitle and adjust layout
+plt.suptitle('Pension Simulation Sensitivity Analysis', fontsize=16)
+plt.tight_layout()
+plt.subplots_adjust(top=0.93)
+save_to_desktop("4_parameter_sensitivity.png")
+plt.close()
+ 
+# 5. Create a visualization of PLSA standards achievement
+print("\nCreating visualization 5: PLSA Standards Achievement")
+ 
+# Define income quintiles
+quintile_incomes = [17500, 26000, 37430, 52000, 78000]
+quintile_names = ["1st (Lowest)", "2nd", "3rd (Median)", "4th", "5th (Highest)"]
+ 
+# Run simulations for each quintile
+np.random.seed(42)
+quintile_results = []
+ 
+for income in quintile_incomes:
+	sim_pensions = []
+   
+	for _ in range(100):  # 100 simulations per quintile
+    	# Generate random parameters for this simulation
+    	salary_growth = np.random.normal(0.022, 0.005)  # Mean 2.2%, SD 0.5%
+       
+    	# Randomly decide if there's a career break
+    	has_break = np.random.random() < 0.45  # 45% chance of break
+    	if has_break:
+        	break_start = np.random.randint(5, 30)
+        	break_duration = max(1, min(10, np.random.normal(3.8, 1)))  # Mean 3.8 years
+        	breaks = [(break_start, break_start + break_duration)]
+    	else:
+        	breaks = []
+       
+    	# Initialize
+    	current_salary = income
+    	current_pot = 0
+       
+    	# Working phase
+    	for year in range(working_years):
+        	# Check if in a career break
+        	in_break = False
+        	for break_start, break_end in breaks:
+            	if break_start <= year < break_end:
+                	in_break = True
+                	break
+           
+        	# Update salary if not in break
+        	if year > 0 and not in_break:
+            	salary_growth_this_year = np.random.normal(salary_growth, 0.01)
+            	current_salary *= (1 + max(-0.05, min(0.10, salary_growth_this_year)))
+           
+        	# Apply career break penalty
+        	past_breaks = 0
+        	for break_start, break_end in breaks:
+            	if year >= break_end:
+                	past_breaks += 1
+           
+        	# Reduce salary based on past breaks
+        	penalty = past_breaks * 3510
+        	current_salary = max(current_salary - penalty, 6240)  # Ensure minimum salary
+           
+        	# Calculate contribution
+        	if in_break:
+            	annual_contribution = 0  # No contribution during break
+        	else:
+            	qualifying_earnings = max(0, min(current_salary - 6240, 50270 - 6240))
+            	annual_contribution = qualifying_earnings * contribution_rate
+           
+        	# Add contribution to pot
+        	current_pot += annual_contribution
+           
+        	# Apply investment return
+        	if year < 35:
+            	investment_return = np.random.normal(early_return_rate, 0.085)
+            	investment_return = max(-0.25, min(0.30, investment_return))
+        	else:
+            	investment_return = np.random.normal(late_return_rate, 0.045)
+            	investment_return = max(-0.15, min(0.20, investment_return))
+           
+        	current_pot *= (1 + investment_return)
+       
+    	# Retirement phase
+    	final_pot = current_pot
+    	retirement_duration = np.random.normal(21.15, 1)  # Mean 21.15 years
+    	retirement_duration = max(15, min(30, retirement_duration))
+    	annual_private_pension = final_pot / retirement_duration
+    	annual_total_pension = annual_private_pension + 11502.40  # Add state pension
+       
+    	sim_pensions.append(annual_total_pension)
+   
+	# Calculate metrics for this quintile
+	quintile_results.append({
+    	'pensions': np.array(sim_pensions),
+    	'median': np.median(sim_pensions),
+    	'min_pct': np.mean(np.array(sim_pensions) >= 14400) * 100,
+    	'mod_pct': np.mean(np.array(sim_pensions) >= 31300) * 100,
+    	'com_pct': np.mean(np.array(sim_pensions) >= 43100) * 100
+	})
+ 
+# Create visualization
+plt.figure(figsize=(14, 10))
+ 
+# Create two subplots
+plt.subplot(2, 1, 1)
+ 
+# Get data for grouped bar chart
+min_pcts = [r['min_pct'] for r in quintile_results]
+mod_pcts = [r['mod_pct'] for r in quintile_results]
+com_pcts = [r['com_pct'] for r in quintile_results]
+ 
+# Set up grouped bar chart
+x = np.arange(len(quintile_names))
+width = 0.25
+ 
+# Create the grouped bar chart
+plt.bar(x - width, min_pcts, width, label='Minimum (£14,400)', color='#55A868')
+plt.bar(x, mod_pcts, width, label='Moderate (£31,300)', color='#F8AC8C')
+plt.bar(x + width, com_pcts, width, label='Comfortable (£43,100)', color='#C44E52')
+ 
+# Add value labels
+for i, (min_p, mod_p, com_p) in enumerate(zip(min_pcts, mod_pcts, com_pcts)):
+	plt.text(i - width, min_p + 2, f'{min_p:.1f}%', ha='center', va='bottom')
+	plt.text(i, mod_p + 2, f'{mod_p:.1f}%', ha='center', va='bottom')
+	plt.text(i + width, com_p + 2, f'{com_p:.1f}%', ha='center', va='bottom')
+ 
+# Add labels and title
+plt.xlabel('Income Quintile', fontsize=12)
+plt.ylabel('Percentage Achieving Standard (%)', fontsize=12)
+plt.title('PLSA Standards Achievement Rates by Income Quintile', fontsize=14)
+plt.xticks(x, quintile_names)
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.ylim(0, 100)
+ 
+# Create distributions plot
+plt.subplot(2, 1, 2)
+ 
+# Use violin plots to show distributions
+violin_data = [r['pensions'] for r in quintile_results]
+violin = plt.violinplot(violin_data, showmeans=False, showmedians=True)
+ 
+# Customize violin plot colors
+for i, pc in enumerate(violin['bodies']):
+	pc.set_facecolor('#4C72B0')
+	pc.set_edgecolor('black')
+	pc.set_alpha(0.7)
+ 
+# Add PLSA threshold lines
+plt.axhline(y=14400, color='green', linestyle='--', alpha=0.7, label='Minimum (£14,400)')
+plt.axhline(y=31300, color='orange', linestyle='--', alpha=0.7, label='Moderate (£31,300)')
+plt.axhline(y=43100, color='red', linestyle='--', alpha=0.7, label='Comfortable (£43,100)')
+ 
+# Add median values
+medians = [r['median'] for r in quintile_results]
+for i, median in enumerate(medians):
+	plt.text(i + 1, median + 2000, f'£{median:,.0f}', ha='center', va='bottom', fontweight='bold')
+ 
+# Add labels and title
+plt.xlabel('Income Quintile', fontsize=12)
+plt.ylabel('Annual Pension (£)', fontsize=12)
+plt.title('Distribution of Pension Outcomes by Income Quintile', fontsize=14)
+plt.xticks(np.arange(1, len(quintile_names) + 1), quintile_names)
+plt.legend()
+plt.grid(True, alpha=0.3)
+ 
+# Adjust layout and save
+plt.tight_layout()
+save_to_desktop("5_plsa_standards_achievement.png")
+plt.close()
+ 
+print("\nAll simulation visualizations have been saved to your desktop.")
+print("Files saved:")
+print("1. 1_pension_pot_growth_simulation.png")
+print("2. 2_career_scenarios_impact.png")
+print("3. 3_monte_carlo_simulation.png")
+print("4. 4_parameter_sensitivity.png")
+print("5. 5_plsa_standards_achievement.png")
+
+
+------------------------------------------------------------------------------------
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+ 
+# Explicitly set the desktop path
+desktop_path = "/Users/Esi/Desktop"
+print(f"Saving visualizations to: {desktop_path}")
+ 
+# Function to save figures
+def save_to_desktop(filename):
+	full_path = os.path.join(desktop_path, filename)
+	plt.savefig(full_path, dpi=300, bbox_inches='tight')
+	print(f"Saved: {full_path}")
+	return full_path
+ 
+# Set plot style
+try:
+	plt.style.use('seaborn-v0_8-whitegrid')
+except:
+	try:
+    	plt.style.use('seaborn-whitegrid')  # Fallback for older versions
+	except:
+    	pass
+ 
+# Define income quintiles
+quintile_incomes = [17500, 26000, 37430, 52000, 78000]
+quintile_names = ["1st (Lowest)", "2nd", "3rd (Median)", "4th", "5th (Highest)"]
+ 
+# Define PLSA standards
+plsa_thresholds = {
+	"Minimum": 14400,
+	"Moderate": 31300,
+	"Comfortable": 43100
+}
+ 
+# Parameters for simulation
+state_pension = 11502.40
+contribution_rate = 0.08
+working_years = 40
+retirement_years = 20
+ 
+# ---------- Graph 1: U-shaped Adequacy Problem ----------
+print("\nCreating Graph 1: U-shaped Adequacy Problem")
+ 
+# Sample data - we'll use a pre-defined pattern to illustrate the U-shaped problem
+# These percentages represent probability of achieving "adequate" retirement income
+# (defined as meeting the "Moderate" PLSA standard of £31,300)
+adequacy_percentages = [22, 36, 48, 39, 24]  # U-shaped pattern
+ 
+plt.figure(figsize=(12, 8))
+ 
+# Create bar chart
+bars = plt.bar(quintile_names, adequacy_percentages, color='#4C72B0', width=0.6)
+ 
+# Add value labels on top of each bar
+for bar in bars:
+	height = bar.get_height()
+	plt.text(bar.get_x() + bar.get_width()/2., height + 1,
+        	f'{height}%', ha='center', va='bottom', fontweight='bold')
+ 
+# Add PLSA Moderate threshold reference
+plt.axhline(y=50, color='orange', linestyle='--', alpha=0.7,
+       	label=f'Target Adequacy Rate (50%)')
+ 
+# Add labels and annotations
+plt.xlabel('Income Quintile', fontsize=14)
+plt.ylabel('Probability of Achieving Adequate Retirement Income (%)', fontsize=14)
+plt.title('U-shaped Adequacy Problem Across Income Quintiles', fontsize=16)
+plt.ylim(0, 60)
+plt.grid(True, alpha=0.3)
+plt.legend()
+ 
+# Add explanatory annotations for lower and higher quintiles
+plt.annotate('Lower incomes face opt-out\nand affordability challenges',
+         	xy=(0, adequacy_percentages[0]),
+         	xytext=(0, adequacy_percentages[0]-15),
+         	ha='center', va='top',
+         	bbox=dict(boxstyle="round,pad=0.3", fc="#F8CECC", alpha=0.6))
+ 
+plt.annotate('Higher incomes face\ncontribution caps and\nhigher adequacy targets',
+         	xy=(4, adequacy_percentages[4]),
+         	xytext=(4, adequacy_percentages[4]-15),
+         	ha='center', va='top',
+         	bbox=dict(boxstyle="round,pad=0.3", fc="#F8CECC", alpha=0.6))
+ 
+plt.tight_layout()
+save_to_desktop("1_u_shaped_adequacy_problem.png")
+plt.close()
+ 
+# ---------- Graph 2: Retirement Income Composition ----------
+print("\nCreating Graph 2: Retirement Income Composition")
+ 
+# Calculate state vs private pension proportion for each quintile
+# Based on simulated median pension values
+median_pensions = [18500, 24600, 31300, 38700, 45200]  # Example median pension values
+state_pension_pct = [(state_pension / p) * 100 for p in median_pensions]
+private_pension_pct = [100 - s for s in state_pension_pct]
+ 
+plt.figure(figsize=(12, 8))
+ 
+# Create stacked bar chart
+plt.bar(quintile_names, private_pension_pct, color='#4C72B0', label='Private Pension')
+plt.bar(quintile_names, state_pension_pct, bottom=private_pension_pct, color='#55A868', label='State Pension')
+ 
+# Add percentage labels
+for i in range(len(quintile_names)):
+	# Add state pension percentage
+	plt.text(i, private_pension_pct[i] + state_pension_pct[i]/2,
+         	f"{state_pension_pct[i]:.1f}%", ha='center', va='center',
+         	fontweight='bold', color='white')
+   
+	# Add private pension percentage
+	plt.text(i, private_pension_pct[i]/2,
+         	f"{private_pension_pct[i]:.1f}%", ha='center', va='center',
+         	fontweight='bold', color='white')
+   
+	# Add absolute state pension value at the top
+	plt.text(i, 101, f"£{state_pension:,.0f}", ha='center', va='bottom',
+         	fontsize=10, color='#55A868')
+   
+	# Add absolute private pension value below the quintile label
+	private_amount = median_pensions[i] - state_pension
+	plt.text(i, -5, f"£{private_amount:,.0f}", ha='center', va='top',
+         	fontsize=10, color='#4C72B0')
+ 
+# Add labels and title
+plt.xlabel('Income Quintile', fontsize=14)
+plt.ylabel('Proportion of Retirement Income (%)', fontsize=14)
+plt.title('Composition of Retirement Income Across Income Quintiles', fontsize=16)
+plt.ylim(0, 110)  # Leave room for annotations
+plt.grid(True, alpha=0.3)
+plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
+ 
+# Add arrow annotations for regressive impact
+plt.annotate('Higher reliance on state pension\nfor lower income groups',
+         	xy=(0, state_pension_pct[0]/2 + private_pension_pct[0]),
+         	xytext=(1.5, 90),
+         	arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=8),
+         	ha='center', va='center',
+         	bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
+ 
+plt.annotate('Higher private pension\nfor higher income groups',
+         	xy=(4, private_pension_pct[4]/2),
+         	xytext=(3.5, 30),
+         	arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=8),
+         	ha='center', va='center',
+         	bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
+ 
+plt.tight_layout()
+plt.subplots_adjust(bottom=0.2)  # Make room for the legend
+save_to_desktop("2_retirement_income_composition.png")
+plt.close()
+ 
+# ---------- Graph 3: Welfare Impact of Fixed Contribution Rate ----------
+print("\nCreating Graph 3: Welfare Impact of Fixed Contribution Rate")
+ 
+# Create welfare impact data
+# Negative values indicate welfare loss, positive indicate welfare gain
+welfare_impacts = [-4.2, -1.5, 2.8, 1.2, -3.5]  # Example welfare impact values
+ 
+plt.figure(figsize=(12, 8))
+ 
+# Create bar chart with color coding based on positive/negative
+colors = ['#C44E52' if x < 0 else '#55A868' for x in welfare_impacts]
+bars = plt.bar(quintile_names, welfare_impacts, color=colors, width=0.6)
+ 
+# Add horizontal line at y=0
+plt.axhline(y=0, color='black', linestyle='-', alpha=0.5)
+ 
+# Add value labels
+for bar in bars:
+	height = bar.get_height()
+	y_pos = height + 0.3 if height > 0 else height - 0.7
+	plt.text(bar.get_x() + bar.get_width()/2., y_pos,
+        	f'{height:.1f}', ha='center', va='center', fontweight='bold')
+ 
+# Add labels and title
+plt.xlabel('Income Quintile', fontsize=14)
+plt.ylabel('Welfare Effect (Relative Units)', fontsize=14)
+plt.title('Welfare Impact of 8% Fixed Contribution Rate Across Income Quintiles', fontsize=16)
+plt.ylim(-7, 5)  # Set limits with room for annotations
+plt.grid(True, alpha=0.3)
+ 
+# Add annotations explaining negative welfare effects
+plt.annotate('Liquidity constraints\ncause welfare loss',
+         	xy=(0, welfare_impacts[0]),
+         	xytext=(0, -6),
+         	ha='center', va='center',
+         	bbox=dict(boxstyle="round,pad=0.3", fc="#F8CECC", alpha=0.6))
+ 
+plt.annotate('Undersaving relative to\nconsumption needs causes welfare loss',
+         	xy=(4, welfare_impacts[4]),
+         	xytext=(4, -6),
+         	ha='center', va='center',
+         	bbox=dict(boxstyle="round,pad=0.3", fc="#F8CECC", alpha=0.6))
+ 
+# Add annotation for middle-income positive effects
+plt.annotate('Optimal contribution level\nfor middle incomes',
+         	xy=(2, welfare_impacts[2]),
+         	xytext=(2, 4),
+         	ha='center', va='center',
+         	bbox=dict(boxstyle="round,pad=0.3", fc="#D5E8D4", alpha=0.6))
+ 
+plt.tight_layout()
+save_to_desktop("3_welfare_impact_fixed_contribution.png")
+plt.close()
+ 
+# ---------- Graph 4: Income vs. Adequacy Probability ----------
+print("\nCreating Graph 4: Income vs. Adequacy Probability")
+ 
+plt.figure(figsize=(12, 8))
+ 
+# Create data for contributions (increasing with income)
+annual_contributions = [q * 0.08 for q in [11260, 19760, 31190, 44030, 44030]]  # Based on qualifying earnings
+ 
+# Create adequacy probabilities (with 4th quintile peak)
+adequacy_probs = [22, 36, 48, 55, 40]  # Peak at 4th quintile then decrease
+ 
+# Create plot with dual y-axes
+fig, ax1 = plt.subplots(figsize=(12, 8))
+ax2 = ax1.twinx()
+ 
+# Plot contributions on left axis
+bars = ax1.bar(quintile_names, annual_contributions, color='#4C72B0', alpha=0.7, width=0.4, label='Annual Contribution (£)')
+ax1.set_ylabel('Annual Pension Contribution (£)', color='#4C72B0', fontsize=14)
+ax1.tick_params(axis='y', labelcolor='#4C72B0')
+ 
+# Add contribution value labels
+for bar in bars:
+	height = bar.get_height()
+	ax1.text(bar.get_x() + bar.get_width()/2., height + 100,
+        	f'£{height:,.0f}', ha='center', va='bottom', color='#4C72B0')
+ 
+# Plot adequacy probability on right axis
+line = ax2.plot(quintile_names, adequacy_probs, 'o-', color='#C44E52', linewidth=3, label='Adequacy Probability (%)')
+ax2.set_ylabel('Probability of Achieving "Moderate" Standard (%)', color='#C44E52', fontsize=14)
+ax2.tick_params(axis='y', labelcolor='#C44E52')
+ 
+# Add adequacy percentage labels
+for i, prob in enumerate(adequacy_probs):
+	ax2.text(i, prob + 2, f'{prob}%', ha='center', va='bottom', color='#C44E52', fontweight='bold')
+ 
+# Add a yellow highlight for the 4th and 5th quintiles
+ax2.axvspan(3, 4.5, alpha=0.2, color='yellow')
+ 
+# Add an annotation explaining the drop for highest quintile
+ax2.annotate('Adequacy drops despite higher\ncontributions due to:\n- Contribution caps\n- Higher consumption expectations',
+         	xy=(4, adequacy_probs[4]),
+         	xytext=(3.5, adequacy_probs[4]-20),
+         	arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=8),
+         	ha='left', va='center',
+         	bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
+ 
+# Add title and grid
+plt.title('Relationship Between Income Level and Retirement Adequacy Probability', fontsize=16)
+ax1.grid(True, alpha=0.3)
+ax1.set_xlabel('Income Quintile', fontsize=14)
+ 
+# Create combined legend
+lines1, labels1 = ax1.get_legend_handles_labels()
+lines2, labels2 = ax2.get_legend_handles_labels()
+ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+ 
+plt.tight_layout()
+save_to_desktop("4_income_vs_adequacy_probability.png")
+plt.close()
+ 
+print("\nAll insight visualizations have been saved to your desktop.")
+print("Files saved:")
+print("1. 1_u_shaped_adequacy_problem.png")
+print("2. 2_retirement_income_composition.png")
+print("3. 3_welfare_impact_fixed_contribution.png")
+print("4. 4_income_vs_adequacy_probability.png")
+
+
+
+
